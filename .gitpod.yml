@@ -14,3 +14,5 @@ vscode:
     - ms-python.python
     - github.copilot
 
+env:
+  GEMINI_API_KEY: ${GEMINI_API_KEY}
