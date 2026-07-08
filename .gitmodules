@@ -1,0 +1,3 @@
+[submodule "telegram-mock-ai"]
+	path = telegram-mock-ai
+	url = https://github.com/skrashevich/telegram-mock-ai
