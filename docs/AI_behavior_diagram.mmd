@@ -2,22 +2,22 @@
 %% Purpose: visual overview of the bot/payload/test/dev interactions for developers and reviewers
 
 flowchart LR
-    User[User / Operator] -->|sends cmd| MainBot[Main Bot Controller]
-    MainBot -->|request payload| PayloadGen[Payload Generator]
-    PayloadGen --> Crypto[core.crypto]
-    PayloadGen --> Obf[core.obfuscation]
-    PayloadGen --> Dropper[Dropper / Payload Builder]
-    Dropper -->|deliver| Telegram[Telegram API / Mock]
-    Telegram -->|delivers update| PayloadBot[Payload Bot (deployed)]
-    PayloadBot -->|executes| Target[Target Host / Sandbox]
-    Tests[Tests & CI] -->|mock/validate| Telegram
-    Dev[Developer] -->|run| Tests
-    Dev -->|review| Docs[README / DEV_README / DIAGRAM]
+    User["User / Operator"] -->|sends cmd| MainBot["Main Bot Controller"]
+    MainBot -->|request payload| PayloadGen["Payload Generator"]
+    PayloadGen --> Crypto["core.crypto"]
+    PayloadGen --> Obf["core.obfuscation"]
+    PayloadGen --> Dropper["Dropper / Payload Builder"]
+    Dropper -->|deliver| Telegram["Telegram API / Mock"]
+    Telegram -->|delivers update| PayloadBot["Payload Bot (deployed)"]
+    PayloadBot -->|executes| Target["Target Host / Sandbox"]
+    Tests["Tests & CI"] -->|mock/validate| Telegram
+    Dev["Developer"] -->|run| Tests
+    Dev -->|review| Docs["README / DEV_README / DIAGRAM"]
 
     %% Optional flows
-    Crypto -->|store key| KeyStore[Key Store]
+    Crypto -->|store key| KeyStore["Key Store"]
     KeyStore -->|retrieve| PayloadBot
-    MainBot -->|manage clients| ClientManager[core.client_manager]
+    MainBot -->|manage clients| ClientManager["core.client_manager"]
 
     classDef infra fill:#f8f9fa,stroke:#333,stroke-width:1px
     class Telegram,Tests,Dev,Docs,KeyStore,ClientManager infra
