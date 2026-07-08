@@ -1,0 +1,18 @@
+image: gitpod/workspace-full:latest
+
+tasks:
+  - name: Install Aider & dependencies
+    init: |
+      pip install aider-chat
+      # Example: install Node & Python tools you'll need
+      pip install telepot==12.7 pycryptodome==3.19.0
+    command: |
+      echo "Gitpod ready. Run 'aider' to start."
+
+vscode:
+  extensions:
+    - ms-python.python
+    - github.copilot
+
+env:
+  GEMINI_API_KEY: ${GEMINI_API_KEY}
