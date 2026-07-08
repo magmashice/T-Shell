@@ -1,3 +1,9 @@
+"""Core helpers package.
+
+This package re-exports the main helper classes so they can be
+imported via `from core import CryptoHandler`.
+"""
+
 from .client_manager import ClientManager
 from .crypto import CryptoHandler
 from .av_bypass import AVBypass

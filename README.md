@@ -50,6 +50,38 @@ This tool is for **whatever purposes** and make sure your bot token stays safe. 
 
 Now go have some fun pwning!
 
+## Development utilities: local Telegram mock server
+
+For faster development and deterministic testing you can run a local
+Telegram Bot API mock that emulates `api.telegram.org` and provides an
+Admin API for injecting updates. This project integrates well with
+`skrashevich/telegram-mock-ai`.
+
+Quick start (recommended: Docker + Ollama):
+
+1. Clone the mock repo under `tools/telegram-mock-ai` or use the helper
+    script `tools/telegram-mock-ai/setup.ps1`.
+2. Copy `config.example.yaml` to `config.yaml` and adjust settings if
+    needed.
+3. Start the services:
+
+```powershell
+cd tools/telegram-mock-ai/telegram-mock-ai
+docker compose up -d
+```
+
+On first run, if using Ollama, pull a model into the Ollama container:
+
+```powershell
+docker exec -it ollama ollama pull llama3
+```
+
+The mock Bot API will be available at `http://localhost:8081` and the
+Admin API at `http://localhost:8082`.
+
+See `tools/telegram-mock-ai/README.md` for more details and helper
+commands.
+
 [![Telegram](https://badgen.net/badge/icon/Don't%20be%20an%20skid!?icon=telegram&label=DM%20for%20Queries)](https://t.me://hello_elliot_bot)
 ----------
 

